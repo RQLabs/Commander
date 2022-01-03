@@ -51,15 +51,6 @@ void logData(void * parameters) {
         
         AccelerometerData element;
         xQueueReceive(queue, &element, portMAX_DELAY);
-       
-        // Serial.print("Got item: ");
-        // Serial.print(element.currenttime);
-        // Serial.print("|");
-        // Serial.print(element.valX);
-        // Serial.print("|");
-        // Serial.print(element.valY);
-        // Serial.print("|");
-        // Serial.println(element.valZ);
 
         
         logfile.print(element.currenttime);
