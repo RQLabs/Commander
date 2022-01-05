@@ -1,43 +1,72 @@
 #include <SPI.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_MPU6050.h>
+#include "Adafruit_BMP3XX.h"
 #include "SdFat.h"
 
-Adafruit_MPU6050 mpu;
-
 int pinBuzzer = 13;
+#define SEALEVELPRESSURE_HPA (1013.25)
+
+// I2C device found at address 0x68
+// I2C device found at address 0x77  
+Adafruit_MPU6050 mpu;
+Adafruit_BMP3XX bmp;
 
 QueueHandle_t queue;
 SdFat sd; 
 File logfile;
 char filename[15];
+float baseAltitude = 0;
 
-struct AccelerometerData
+struct SensorData
 {
-    unsigned long currenttime;
-    float valX;
-    float valY;
-    float valZ;
+    unsigned long currenttime = 0;
+    float MPUaccX = -1;
+    float MPUaccY = -1;
+    float MPUaccZ = -1;
+
+    float MPUgyroX = -1;
+    float MPUgyroY = -1;
+    float MPUgyroZ = -1;
+
+    float BMPtemperature = -1;
+    float BMPpressure = -1;
+    float BMPaltitude = -1;
 };
 
 
 void collectMPUData(void * parameters) {
     for (;;) {
-        digitalWrite(pinBuzzer, LOW);
-
         sensors_event_t a, g, temp;
         mpu.getEvent(&a, &g, &temp);
 
-        AccelerometerData accData;
+        SensorData sensData;
 
-        accData.currenttime = millis();
-        accData.valX = a.acceleration.x;
-        accData.valY = a.acceleration.y;
-        accData.valZ = a.acceleration.z;
+        sensData.currenttime = millis();
+        sensData.MPUaccX = a.acceleration.x;
+        sensData.MPUaccY = a.acceleration.y;
+        sensData.MPUaccZ = a.acceleration.z;
+        sensData.MPUgyroX = g.gyro.x;
+        sensData.MPUgyroY = g.gyro.y;
+        sensData.MPUgyroZ = g.gyro.z;
 
-        xQueueSend(queue, &accData, portMAX_DELAY);
+        xQueueSend(queue, &sensData, portMAX_DELAY);
+        vTaskDelay(1 / portTICK_PERIOD_MS);
+    }
+}
 
-        digitalWrite(pinBuzzer, HIGH);
+void collectBMPData(void * parameters) {
+    for (;;) {
+        bmp.performReading();
+
+        SensorData sensData;
+
+        sensData.currenttime = millis();
+        sensData.BMPtemperature = bmp.temperature;
+        sensData.BMPpressure = bmp.pressure / 100.0; //hPa
+        sensData.BMPaltitude = bmp.readAltitude(SEALEVELPRESSURE_HPA) - baseAltitude;
+
+        xQueueSend(queue, &sensData, portMAX_DELAY);
         vTaskDelay(1 / portTICK_PERIOD_MS);
     }
 }
@@ -47,23 +76,34 @@ void logData(void * parameters) {
     for (;;) {
         // Serial.print("Task 2 counter: ");
         // Serial.println(count2++);
-        digitalWrite(LED_BUILTIN, LOW);
-        
-        AccelerometerData element;
+        SensorData element;
         xQueueReceive(queue, &element, portMAX_DELAY);
 
         
         logfile.print(element.currenttime);
-        logfile.print("|");
-        logfile.print(element.valX);
-        logfile.print("|");
-        logfile.print(element.valY);
-        logfile.print("|");
-        logfile.println(element.valZ);
+        logfile.print(",");
+        logfile.print(element.MPUaccX);
+        logfile.print(",");
+        logfile.print(element.MPUaccY);
+        logfile.print(",");
+        logfile.print(element.MPUaccZ);
+        logfile.print(",");
+        logfile.print(element.MPUgyroX);
+        logfile.print(",");
+        logfile.print(element.MPUgyroY);
+        logfile.print(",");
+        logfile.print(element.MPUgyroZ);
+        logfile.print(",");
+        logfile.print(element.BMPaltitude);
+        logfile.print(",");
+        logfile.print(element.BMPpressure);
+        logfile.print(",");
+        logfile.println(element.BMPtemperature);
         // logfile.write((const uint8_t *)&element, sizeof(element));
 
+        digitalWrite(pinBuzzer, LOW);
         logfile.flush();
-        digitalWrite(LED_BUILTIN, HIGH);
+        digitalWrite(pinBuzzer, HIGH);
         // vTaskDelay(1 / portTICK_PERIOD_MS);
     }
     logfile.close();
@@ -106,12 +146,32 @@ void setup()
 
     mpu.setAccelerometerRange(MPU6050_RANGE_16_G);
     mpu.setGyroRange(MPU6050_RANGE_2000_DEG);
-    mpu.setFilterBandwidth(MPU6050_BAND_94_HZ);
+    mpu.setFilterBandwidth(MPU6050_BAND_260_HZ);
+
+    // ---------------------------------------------------------------
+
+    Serial.print("BMP388 state: ");
+    if(!bmp.begin_I2C(0x77)) {
+        error();
+    }
+    Serial.println("Ok!");
+
+    bmp.setTemperatureOversampling(BMP3_OVERSAMPLING_4X);
+    bmp.setPressureOversampling(BMP3_OVERSAMPLING_4X);
+    bmp.setIIRFilterCoeff(BMP3_IIR_FILTER_COEFF_3);
+    bmp.setOutputDataRate(BMP3_ODR_200_HZ);
+
+    Serial.print("BMP388 reading: ");
+    if (! bmp.performReading()) {
+        error();
+    }
+    Serial.println("Ok!");
+    baseAltitude = bmp.readAltitude(SEALEVELPRESSURE_HPA);
 
     // ---------------------------------------------------------------
 
     Serial.print("sd Card state: ");
-    if (!sd.begin(5, SD_SCK_MHZ(10))) {
+    if (!sd.begin(5, SD_SCK_MHZ(11))) {
         error();
     }
     Serial.println("Ok!");
@@ -127,6 +187,16 @@ void setup()
         }
     }
 
+    // ---------------------------------------------------------------
+
+    queue = xQueueCreate(2000, sizeof( SensorData ) );
+    if(queue == NULL){
+        Serial.println("Error creating the queue");
+        error();
+    }
+
+    // ---------------------------------------------------------------
+
     logfile = sd.open(filename, O_WRITE | O_CREAT |O_TRUNC); 
     if( ! logfile ) {
         Serial.print("Couldnt create "); 
@@ -138,17 +208,19 @@ void setup()
 
     // ---------------------------------------------------------------
 
-    queue = xQueueCreate( 5000, sizeof( AccelerometerData ) );
-    if(queue == NULL){
-        Serial.println("Error creating the queue");
-    }
-
-    // ---------------------------------------------------------------
-
 	xTaskCreate(
         collectMPUData,
         "collectMPUData",
-        15000,
+        14000,
+        NULL,
+        1,
+        NULL
+    );
+
+    xTaskCreate(
+        collectBMPData,
+        "collectBMPData",
+        14000,
         NULL,
         1,
         NULL
@@ -157,7 +229,7 @@ void setup()
     xTaskCreate(
         logData,
         "LogData",
-        15000,
+        16000,
         NULL,
         1,
         NULL
