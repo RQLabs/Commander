@@ -67,7 +67,7 @@ void collectBMPData(void * parameters) {
         sensData.BMPaltitude = bmp.readAltitude(SEALEVELPRESSURE_HPA) - baseAltitude;
 
         xQueueSend(queue, &sensData, portMAX_DELAY);
-        vTaskDelay(1 / portTICK_PERIOD_MS);
+        vTaskDelay(5 / portTICK_PERIOD_MS);
     }
 }
 
@@ -102,8 +102,10 @@ void logData(void * parameters) {
         // logfile.write((const uint8_t *)&element, sizeof(element));
 
         digitalWrite(pinBuzzer, LOW);
+        digitalWrite(LED_BUILTIN, HIGH);
         logfile.flush();
         digitalWrite(pinBuzzer, HIGH);
+        digitalWrite(LED_BUILTIN, LOW);
         // vTaskDelay(1 / portTICK_PERIOD_MS);
     }
     logfile.close();
