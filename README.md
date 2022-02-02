@@ -28,6 +28,7 @@ Its VIN pin is connected to 3V output from ESP32**(VDD 3V3)**. SDA pin is connec
 
 ### MicroSD card reader
 ![MicroSD card reader](https://cdn1.botland.com.pl/64074-pdt_540/modul-czytnika-kart-microsd.jpg)
+
 Module is powered by buck-boost converter (5V). Others pins connection:
 - Module CS to **GPIO5**
 - Module SCK to **GPIO18**
