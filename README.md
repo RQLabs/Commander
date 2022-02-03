@@ -40,7 +40,7 @@ We've decided to use [ESP32's tasks](https://docs.espressif.com/projects/esp-idf
 
 At the same moment two tasks can run. In our setup whole time we are saving data to SD card (one core) while on a second one we can collect data from the sensors.
 
-Data collecting task was divided into two parts. One part is responsible for collecting the data from MPU6050 sensor. Another one do the same thing but for the BMP388 sensor. Each of this tasks puts collected data into queue which is a connector between "sensor" tasks and data saving task. BMP388 task goes sleep for a longer time than MPU6050 task, because BMP388 jest slower than MPU. We've decided to do that, beacause we want to collect as many data as we can and waiting for new data coming from BMP388 was a waste of time.
+Data collecting task was divided into two parts. One part is responsible for collecting the data from MPU6050 sensor. Another one do the same thing but for the BMP388 sensor. Each of this tasks puts collected data into queue which is a connector between "sensor" tasks and data saving task. BMP388 task goes sleep for a longer time than MPU6050 task, because BMP388 jest slower than MPU. We've decided to use tasks, beacause we want to collect as many data as we can and waiting for new data (using synchronized programming) from BMP388 was a waste of time.
 
 For both sensors we use the same interface - I2C. We can collect data from specific sensor using its addresses:
 - 0x68 for MPU6050
